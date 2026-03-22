@@ -30,12 +30,8 @@ ENTRYPOINT ["python", "harness.py"]
 """
 
 _HARNESS_PY = """\
-\"\"\"Container entry-point for sandboxed script execution.\"\"\"
-import sys, json, asyncio, importlib.util, pathlib
-
-def main():
-    # Placeholder harness — Phase 2 will flesh this out.
-    print(json.dumps({"status": "ok"}))
+\"\"\"Container entry-point – delegates to scriptbox.sandbox.harness.\"\"\"
+from scriptbox.sandbox.harness import main
 
 if __name__ == "__main__":
     main()
