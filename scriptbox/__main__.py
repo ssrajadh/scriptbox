@@ -26,6 +26,9 @@ def _build_parser() -> argparse.ArgumentParser:
     trigger_p = sub.add_parser("trigger", parents=[common], help="Manually trigger a script by ID")
     trigger_p.add_argument("script_id", help="Script ID to trigger")
 
+    start_p = sub.add_parser("start", help="Start the Telegram bot and scheduler")
+    start_p.add_argument("--env", default=".env", help="Path to .env file")
+
     return parser
 
 
@@ -112,6 +115,12 @@ def _cmd_setup() -> None:
     run_setup()
 
 
+def _cmd_start(args: argparse.Namespace) -> None:
+    from scriptbox.main import main as start_main
+
+    start_main(args.env)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -130,6 +139,8 @@ def main() -> None:
         asyncio.run(_cmd_trigger(args))
     elif args.command == "setup":
         _cmd_setup()
+    elif args.command == "start":
+        _cmd_start(args)
 
 
 if __name__ == "__main__":

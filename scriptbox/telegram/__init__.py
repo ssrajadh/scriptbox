@@ -23,9 +23,11 @@ from scriptbox.telegram.handlers import (
     cmd_stats,
     cmd_status,
 )
+from scriptbox.telegram.bot import ScriptBoxBot
 from scriptbox.telegram.notifier import SandboxNotifier, TelegramNotifier
 
 __all__ = [
+    "ScriptBoxBot",
     "TelegramConfig",
     "TelegramConfigError",
     "authorized",

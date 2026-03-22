@@ -45,10 +45,19 @@ class Runner:
         self._scripts: list[ScriptInfo] = []
         self._run_logger = RunLogger(db_path)
         self._scheduler = AsyncIOScheduler()
+        self._notifier: Any | None = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_notifier(self, notifier: Any) -> None:
+        """Attach a :class:`~scriptbox.telegram.notifier.TelegramNotifier`.
+
+        When set, cron-triggered scripts send their results to Telegram
+        automatically.  Failures produce an immediate alert.
+        """
+        self._notifier = notifier
 
     async def setup(self) -> None:
         """Load scripts, build the DAG, and register scheduled jobs."""
@@ -56,12 +65,18 @@ class Runner:
         self._sync_scheduler_jobs()
         if not self._scheduler.running:
             self._scheduler.start()
+        total = len(self._scripts)
+        scheduled = len(self._scheduler.get_jobs())
         logger.info(
             "Runner ready – %d script(s) loaded, %d scheduled, sandbox=%s",
-            len(self._scripts),
-            len(self._scheduler.get_jobs()),
+            total,
+            scheduled,
             self._use_sandbox,
         )
+        if self._notifier:
+            await self._notifier.send(
+                f"🟢 ScriptBox started. {total} scripts loaded, {scheduled} scheduled."
+            )
 
     async def trigger(self, script_id: str) -> list[ExecutionResult]:
         """Manually run *script_id* (with full DAG resolution) and log results."""
@@ -194,3 +209,11 @@ class Runner:
         for r in results:
             trigger_type = "cron" if r.script_id == script_id else "dependency"
             await self._run_logger.log_run(r, trigger=trigger_type)
+
+        if self._notifier:
+            for r in results:
+                if r.status == "failed":
+                    await self._notifier.send(
+                        f"🔴 <b>{r.script_id}</b> failed: {r.error or 'unknown error'}"
+                    )
+            await self._notifier.send_results(results, script_id)
