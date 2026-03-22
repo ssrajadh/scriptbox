@@ -1,0 +1,68 @@
+# Scriptbox
+
+A dynamic script loader, DAG-based executor, and scheduler. Scripts are plain Python files with a `META` dict and an `async def run(ctx)` entry point.
+
+## Commands
+
+```bash
+# Run all tests
+python -m pytest tests/
+
+# Run a specific test module
+python -m pytest tests/test_loader.py -v
+
+# Run tests matching a keyword
+python -m pytest tests/ -k "test_cycle"
+```
+
+There is no build step. The project uses `pyproject.toml` with setuptools.
+
+## Architecture
+
+The pipeline flows: **loader -> dag -> executor -> runner**, with **store**, **context**, **observability**, and **sandbox** as supporting modules.
+
+### Core modules (scriptbox/)
+
+- **loader.py** — Discovers `.py` files in a scripts directory, dynamically imports each, validates `META` (dict with `"name"` str) and `run` (async, 1+ positional arg). Returns `ScriptInfo` frozen dataclasses. Invalid scripts are logged and skipped.
+- **dag.py** — Builds dependency graph from `META["depends_on"]`. Provides `topo_sort()` for full ordering and `subgraph(scripts, target)` for minimal execution set. Raises `CycleError` or `MissingDependencyError`.
+- **executor.py** — Runs scripts in topological order. Wires upstream outputs into downstream `ctx.inputs`. Handles timeouts (`META.sandbox.timeout`, default 30s) and failure propagation (downstream scripts marked `"skipped"`). Returns `ExecutionResult` dataclasses.
+- **runner.py** — Main entry point. `Runner` ties loader, DAG, executor, APScheduler, and observability together. `setup()` loads scripts and registers cron jobs. `trigger(script_id)` runs with DAG resolution and logs results. `reload()` picks up new/removed scripts.
+- **context.py** — `ScriptContext` passed to `run(ctx)`. Provides `ctx.script_id`, `ctx.store`, `ctx.inputs`, `ctx.http`, `ctx.llm`, `ctx.telegram`, `ctx.secrets`.
+- **store.py** — `ScriptStore`: per-script key-value store backed by SQLite (aiosqlite). Namespaced by script_id. JSON-serialized values. Table auto-created on first use.
+- **observability.py** — `RunLogger`: logs every execution to SQLite `runs` table. `get_runs()`, `get_stats()`, `get_all_script_stats()` for querying. `llm_calls` table exists for future LLM cost tracking.
+- **sandbox/config.py** — `SandboxConfig` dataclass parsed from `META["sandbox"]`. Validates memory format, cpu > 0, timeout > 0, network in {bridge, none, restricted}. `SandboxConfig.disabled()` for local execution.
+
+### Script contract
+
+Every script in `scripts/` must have:
+
+```python
+META = {
+    "name": "Human-readable name",          # required
+    "schedule": "*/5 * * * *",              # optional, 5-field cron
+    "depends_on": ["other_script_stem"],    # optional
+    "outputs": ["key1"],                    # optional, documentation
+    "description": "What it does",          # optional
+    "sandbox": {"memory": "512m", "timeout": 60},  # optional
+}
+
+async def run(ctx):
+    # ctx.store, ctx.inputs, ctx.http, ctx.llm, ctx.telegram, ctx.secrets
+    return {"key1": "value"}  # optional, passed to downstream via ctx.inputs
+```
+
+### Tests
+
+- Tests live in `tests/`. Fixture scripts live in `tests/script_fixtures/`.
+- Tests use `tmp_path` for database files and temp script directories — no cleanup needed.
+- `test_integration.py` validates the full end-to-end pipeline.
+- pytest-asyncio is configured with `asyncio_mode = "auto"` in pyproject.toml.
+
+### Key conventions
+
+- All database access is async via aiosqlite. Each method opens its own connection.
+- `ScriptInfo` is a frozen dataclass — immutable after creation.
+- The loader skips invalid scripts with warnings rather than crashing.
+- The executor never crashes on script failure — it captures errors and propagates skips.
+- `StubLLMClient` and `StubTelegramClient` in context.py are placeholders for future phases.
+- APScheduler 3.x (`AsyncIOScheduler`, `CronTrigger`) — not v4.
