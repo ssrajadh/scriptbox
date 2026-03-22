@@ -8,19 +8,22 @@ import sys
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scriptbox", description="ScriptBox CLI")
-    parser.add_argument(
+
+    # Common options shared by subcommands that need scripts/db.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
         "--scripts-dir", default="./scripts", help="Path to scripts directory"
     )
-    parser.add_argument("--db", default="./scriptbox.db", help="Path to SQLite database")
-    parser.add_argument("--secrets", default=None, help="Path to secrets JSON file")
+    common.add_argument("--db", default="./scriptbox.db", help="Path to SQLite database")
+    common.add_argument("--secrets", default=None, help="Path to secrets JSON file")
 
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("build-image", help="Build the sandbox Docker image")
-    sub.add_parser("cleanup", help="Remove sandbox containers, image, and orphaned stores")
+    sub.add_parser("cleanup", parents=[common], help="Remove sandbox containers, image, and orphaned stores")
     sub.add_parser("check", help="Check if Docker is available and show image info")
 
-    trigger_p = sub.add_parser("trigger", help="Manually trigger a script by ID")
+    trigger_p = sub.add_parser("trigger", parents=[common], help="Manually trigger a script by ID")
     trigger_p.add_argument("script_id", help="Script ID to trigger")
 
     return parser

@@ -58,7 +58,7 @@ class DockerExecutor:
         await loop.run_in_executor(None, self._image_builder.ensure_image)
 
         run_dir = Path(tempfile.mkdtemp(prefix="scriptbox-run-"))
-        store_dir = Path(self._db_path).parent / "stores" / script_info.id
+        store_dir = Path(self._db_path).resolve().parent / "stores" / script_info.id
         store_dir.mkdir(parents=True, exist_ok=True)
 
         try:

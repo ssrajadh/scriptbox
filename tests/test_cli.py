@@ -73,7 +73,7 @@ class TestTriggerCommand:
         _write(scripts_dir, "simple", SIMPLE_SCRIPT)
         with patch(
             "sys.argv",
-            ["scriptbox", "--scripts-dir", str(scripts_dir), "--db", db_path, "trigger", "simple"],
+            ["scriptbox", "trigger", "simple", "--scripts-dir", str(scripts_dir), "--db", db_path],
         ):
             main()
         out = capsys.readouterr().out
@@ -89,12 +89,12 @@ class TestTriggerCommand:
                 "sys.argv",
                 [
                     "scriptbox",
+                    "trigger",
+                    "nonexistent",
                     "--scripts-dir",
                     str(scripts_dir),
                     "--db",
                     db_path,
-                    "trigger",
-                    "nonexistent",
                 ],
             ),
             pytest.raises(SystemExit) as exc_info,
