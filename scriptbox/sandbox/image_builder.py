@@ -90,6 +90,38 @@ class ImageBuilder:
         logger.info("Image %s built successfully", IMAGE_TAG)
         return IMAGE_TAG
 
+    def cleanup_containers(self) -> int:
+        """Remove any stopped containers created from the scriptbox image. Returns count removed."""
+        removed = 0
+        for c in self._client.containers.list(all=True, filters={"ancestor": IMAGE_TAG}):
+            if c.status in ("exited", "dead", "created"):
+                c.remove(force=True)
+                removed += 1
+                logger.info("Removed container %s", c.short_id)
+        return removed
+
+    def cleanup_image(self) -> bool:
+        """Remove the scriptbox-runner image. Returns True if removed."""
+        try:
+            self._client.images.remove(IMAGE_TAG, force=True)
+            logger.info("Removed image %s", IMAGE_TAG)
+            return True
+        except docker.errors.ImageNotFound:
+            return False
+
+    def get_image_info(self) -> dict:
+        """Return image size, creation date, and source hash (or empty dict if not found)."""
+        try:
+            image = self._client.images.get(IMAGE_TAG)
+        except docker.errors.ImageNotFound:
+            return {}
+        return {
+            "tag": IMAGE_TAG,
+            "size_mb": round(image.attrs["Size"] / (1024 * 1024), 1),
+            "created": image.attrs.get("Created", ""),
+            "source_hash": image.labels.get(_HASH_LABEL, ""),
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -107,6 +108,35 @@ class Runner:
             if self._scheduler.running:
                 self._scheduler.shutdown(wait=False)
             loop.close()
+
+    async def cleanup(self) -> dict:
+        """Clean up sandbox containers, image, and orphaned store directories."""
+        from scriptbox.sandbox.image_builder import ImageBuilder
+
+        info: dict[str, Any] = {}
+        try:
+            builder = ImageBuilder()
+            info["containers_removed"] = builder.cleanup_containers()
+            info["image_removed"] = builder.cleanup_image()
+        except Exception as exc:
+            logger.warning("Sandbox cleanup failed: %s", exc)
+            info["containers_removed"] = 0
+            info["image_removed"] = False
+
+        # Remove orphaned store directories (those without a matching script).
+        stores_dir = Path(self._db_path).parent / "stores"
+        orphans_removed = 0
+        if stores_dir.is_dir():
+            script_ids = {s.id for s in self._scripts}
+            for child in stores_dir.iterdir():
+                if child.is_dir() and child.name not in script_ids:
+                    import shutil
+
+                    shutil.rmtree(child, ignore_errors=True)
+                    orphans_removed += 1
+                    logger.info("Removed orphaned store dir: %s", child.name)
+        info["orphaned_stores_removed"] = orphans_removed
+        return info
 
     def get_scripts(self) -> list[ScriptInfo]:
         return list(self._scripts)
