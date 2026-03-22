@@ -37,10 +37,12 @@ class Runner:
         scripts_dir: str,
         db_path: str = "./scriptbox.db",
         secrets_path: str | None = None,
+        use_sandbox: bool = True,
     ) -> None:
         self._scripts_dir = scripts_dir
         self._db_path = db_path
         self._secrets_path = secrets_path
+        self._use_sandbox = use_sandbox
         self._scripts: list[ScriptInfo] = []
         self._run_logger = RunLogger(db_path)
         self._scheduler = AsyncIOScheduler()
@@ -56,19 +58,30 @@ class Runner:
         if not self._scheduler.running:
             self._scheduler.start()
         logger.info(
-            "Runner ready – %d script(s) loaded, %d scheduled",
+            "Runner ready – %d script(s) loaded, %d scheduled, sandbox=%s",
             len(self._scripts),
             len(self._scheduler.get_jobs()),
+            self._use_sandbox,
         )
 
     async def trigger(self, script_id: str) -> list[ExecutionResult]:
         """Manually run *script_id* (with full DAG resolution) and log results."""
         results = await execute(
-            self._scripts, script_id, self._db_path, self._secrets_path
+            self._scripts,
+            script_id,
+            self._db_path,
+            self._secrets_path,
+            use_sandbox=self._use_sandbox,
         )
         for r in results:
             trigger_type = "dependency" if r.script_id != script_id else "manual"
             await self._run_logger.log_run(r, trigger=trigger_type)
+            logger.info(
+                "Script %s: status=%s sandboxed=%s",
+                r.script_id,
+                r.status,
+                r.sandboxed,
+            )
         return results
 
     async def reload(self) -> None:
@@ -146,7 +159,11 @@ class Runner:
         """Called by APScheduler when a cron job fires."""
         logger.info("Cron triggered: %s", script_id)
         results = await execute(
-            self._scripts, script_id, self._db_path, self._secrets_path
+            self._scripts,
+            script_id,
+            self._db_path,
+            self._secrets_path,
+            use_sandbox=self._use_sandbox,
         )
         for r in results:
             trigger_type = "cron" if r.script_id == script_id else "dependency"

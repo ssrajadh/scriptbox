@@ -93,7 +93,7 @@ def db_path(tmp_path: Path) -> str:
 
 
 async def _make_runner(scripts_dir: Path, db_path: str) -> Runner:
-    runner = Runner(str(scripts_dir), db_path)
+    runner = Runner(str(scripts_dir), db_path, use_sandbox=False)
     await runner.setup()
     return runner
 

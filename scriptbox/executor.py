@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from scriptbox.context import ScriptContext
@@ -23,6 +23,7 @@ class ExecutionResult:
     duration_ms: int
     error: Optional[str]
     outputs: Optional[dict]
+    sandboxed: bool = False
 
 
 async def execute(
@@ -56,6 +57,7 @@ async def execute(
                     duration_ms=0,
                     error="upstream dependency failed",
                     outputs=None,
+                    sandboxed=False,
                 )
             )
             failed_ids.add(script_id)
@@ -67,8 +69,12 @@ async def execute(
 
         if docker_exec is not None and sandbox_cfg.enabled:
             result = await docker_exec.execute(info, inputs, sandbox_cfg)
+            result.sandboxed = True
+            logger.info("Script %s ran in Docker sandbox", script_id)
         else:
             result = await _run_local(info, db_path, inputs, secrets_path, sandbox_cfg.timeout)
+            result.sandboxed = False
+            logger.info("Script %s ran locally", script_id)
 
         results.append(result)
 
@@ -93,16 +99,19 @@ async def execute_single(
     if use_sandbox and sandbox_cfg.enabled:
         docker_exec = _get_docker_executor(db_path, secrets_path)
         if docker_exec is not None:
-            return await docker_exec.execute(script_info, inputs, sandbox_cfg)
+            result = await docker_exec.execute(script_info, inputs, sandbox_cfg)
+            result.sandboxed = True
+            return result
 
-    return await _run_local(
+    result = await _run_local(
         script_info, db_path, inputs or {}, secrets_path, sandbox_cfg.timeout
     )
+    result.sandboxed = False
+    return result
 
 
 def _get_docker_executor(db_path: str, secrets_path: str | None):
     """Return a DockerExecutor if Docker is available, else None with a warning."""
-    # Lazy import to avoid hard dependency on docker when running locally.
     try:
         from scriptbox.sandbox.docker_executor import DockerExecutor
 
