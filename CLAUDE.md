@@ -19,6 +19,12 @@ python -m pytest tests/test_loader.py -v
 
 # Run tests matching a keyword
 python -m pytest tests/ -k "test_cycle"
+
+# CLI usage
+python -m scriptbox build-image          # Build the sandbox Docker image
+python -m scriptbox check                # Show image info and Docker status
+python -m scriptbox trigger <script_id>  # Manually trigger a script
+python -m scriptbox cleanup              # Remove containers, image, orphaned stores
 ```
 
 There is no build step. The project uses `pyproject.toml` with setuptools.
@@ -32,12 +38,13 @@ The pipeline flows: **loader -> dag -> executor -> runner**, with **store**, **c
 - **loader.py** — Discovers `.py` files in a scripts directory, dynamically imports each, validates `META` (dict with `"name"` str) and `run` (async, 1+ positional arg). Returns `ScriptInfo` frozen dataclasses. Invalid scripts are logged and skipped.
 - **dag.py** — Builds dependency graph from `META["depends_on"]`. Provides `topo_sort()` for full ordering and `subgraph(scripts, target)` for minimal execution set. Raises `CycleError` or `MissingDependencyError`.
 - **executor.py** — Runs scripts in topological order. Wires upstream outputs into downstream `ctx.inputs`. Handles timeouts and failure propagation (downstream scripts marked `"skipped"`). `use_sandbox=True` delegates to DockerExecutor; `use_sandbox=False` (default) runs in-process. Returns `ExecutionResult` dataclasses.
-- **runner.py** — Main entry point. `Runner` ties loader, DAG, executor, APScheduler, and observability together. `setup()` loads scripts and registers cron jobs. `trigger(script_id)` runs with DAG resolution and logs results. `reload()` picks up new/removed scripts.
+- **runner.py** — Main entry point. `Runner` ties loader, DAG, executor, APScheduler, and observability together. `setup()` loads scripts and registers cron jobs. `trigger(script_id)` runs with DAG resolution and logs results. `reload()` picks up new/removed scripts. `cleanup()` removes sandbox containers/image and orphaned store directories.
 - **context.py** — `ScriptContext` passed to `run(ctx)`. Provides `ctx.script_id`, `ctx.store`, `ctx.inputs`, `ctx.http`, `ctx.llm`, `ctx.telegram`, `ctx.secrets`.
 - **store.py** — `ScriptStore`: per-script key-value store backed by SQLite (aiosqlite). Namespaced by script_id. JSON-serialized values. Table auto-created on first use.
 - **observability.py** — `RunLogger`: logs every execution to SQLite `runs` table. `get_runs()`, `get_stats()`, `get_all_script_stats()` for querying. `llm_calls` table exists for future LLM cost tracking.
 - **sandbox/config.py** — `SandboxConfig` dataclass parsed from `META["sandbox"]`. Validates memory format, cpu > 0, timeout > 0, network in {bridge, none, restricted}. `SandboxConfig.disabled()` for local execution.
-- **sandbox/image_builder.py** — `ImageBuilder` builds and caches a `scriptbox-runner:latest` Docker image. Assembles build context in a temp dir (Dockerfile, requirements.txt, scriptbox package, harness.py). Stores a source-file hash as an image label to skip rebuilds when nothing changed. Uses `docker` Python SDK.
+- **sandbox/image_builder.py** — `ImageBuilder` builds and caches a `scriptbox-runner:latest` Docker image. Assembles build context in a temp dir (Dockerfile, requirements.txt, scriptbox package, harness.py). Stores a source-file hash as an image label to skip rebuilds when nothing changed. Uses `docker` Python SDK. Utility methods: `cleanup_containers()` removes stopped sandbox containers, `cleanup_image()` removes the image, `get_image_info()` returns size/created/hash.
+- **\_\_main\_\_.py** — CLI entry point (`python -m scriptbox`). Argparse subcommands: `build-image`, `cleanup`, `check`, `trigger <id>`. Trigger validates script existence, prints per-script status, and exits 1 on failure.
 - **sandbox/harness.py** — Container entry-point. Reads `/run/{config,inputs,secrets}.json`, imports `/run/script.py`, builds `ScriptContext`, calls `run(ctx)`, writes `/run/{result,outputs}.json`. Core logic in `run_harness(base_path)` for testability.
 - **sandbox/docker_executor.py** — `DockerExecutor` runs scripts in Docker containers. Prepares a temp run dir, mounts it + a per-script store dir, applies resource limits (memory, cpu, network, read-only root) from `SandboxConfig`, enforces timeout by killing the container.
 
@@ -65,6 +72,7 @@ async def run(ctx):
 - Tests live in `tests/`. Fixture scripts live in `tests/script_fixtures/`.
 - Tests use `tmp_path` for database files and temp script directories — no cleanup needed.
 - `test_integration.py` validates the full end-to-end pipeline.
+- `test_cli.py` tests the CLI entry point (check, trigger, nonexistent script).
 - pytest-asyncio is configured with `asyncio_mode = "auto"` in pyproject.toml.
 - Docker tests are marked with `@pytest.mark.docker` and auto-skip if Docker is unavailable.
 
