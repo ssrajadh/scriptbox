@@ -25,7 +25,17 @@ class TestLoadScriptsMixedDirectory:
 
     def test_only_valid_scripts_returned(self, loaded: list[ScriptInfo]):
         ids = {s.id for s in loaded}
-        assert ids == {"valid_basic", "valid_with_deps"}
+        # Must include the original two plus the executor fixture scripts
+        expected = {
+            "valid_basic",
+            "valid_with_deps",
+            "pass_through",
+            "depends_on_pass",
+            "failing_script",
+            "depends_on_failing",
+            "slow_script",
+        }
+        assert ids == expected
 
     def test_invalid_scripts_excluded(self, loaded: list[ScriptInfo]):
         ids = {s.id for s in loaded}
@@ -36,7 +46,7 @@ class TestLoadScriptsMixedDirectory:
         assert isinstance(loaded, list)
 
     def test_count(self, loaded: list[ScriptInfo]):
-        assert len(loaded) == 2
+        assert len(loaded) == 7
 
 
 # ---------------------------------------------------------------------------
