@@ -9,6 +9,7 @@ from typing import Any, Optional
 from scriptbox.context import ScriptContext
 from scriptbox.dag import build_graph, subgraph
 from scriptbox.loader import ScriptInfo
+from scriptbox.sandbox.config import SandboxConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,13 @@ async def execute(
     target: str,
     db_path: str,
     secrets_path: str | None = None,
+    use_sandbox: bool = False,
 ) -> list[ExecutionResult]:
     """Resolve the DAG for *target* and run scripts in topological order."""
+    docker_exec = None
+    if use_sandbox:
+        docker_exec = _get_docker_executor(db_path, secrets_path)
+
     order = subgraph(scripts, target)
     graph = build_graph(scripts)
     scripts_by_id = {s.id: s for s in scripts}
@@ -57,9 +63,13 @@ async def execute(
 
         info = scripts_by_id[script_id]
         inputs = {dep: collected_outputs[dep] for dep in deps if dep in collected_outputs}
-        timeout = info.meta.get("sandbox", {}).get("timeout", DEFAULT_TIMEOUT)
+        sandbox_cfg = SandboxConfig.from_meta(info.meta)
 
-        result = await _run_one(info, db_path, inputs, secrets_path, timeout)
+        if docker_exec is not None and sandbox_cfg.enabled:
+            result = await docker_exec.execute(info, inputs, sandbox_cfg)
+        else:
+            result = await _run_local(info, db_path, inputs, secrets_path, sandbox_cfg.timeout)
+
         results.append(result)
 
         if result.status == "success" and result.outputs is not None:
@@ -75,19 +85,44 @@ async def execute_single(
     db_path: str,
     inputs: dict[str, Any] | None = None,
     secrets_path: str | None = None,
+    use_sandbox: bool = False,
 ) -> ExecutionResult:
     """Run a single script without DAG resolution."""
-    timeout = script_info.meta.get("sandbox", {}).get("timeout", DEFAULT_TIMEOUT)
-    return await _run_one(script_info, db_path, inputs or {}, secrets_path, timeout)
+    sandbox_cfg = SandboxConfig.from_meta(script_info.meta)
+
+    if use_sandbox and sandbox_cfg.enabled:
+        docker_exec = _get_docker_executor(db_path, secrets_path)
+        if docker_exec is not None:
+            return await docker_exec.execute(script_info, inputs, sandbox_cfg)
+
+    return await _run_local(
+        script_info, db_path, inputs or {}, secrets_path, sandbox_cfg.timeout
+    )
 
 
-async def _run_one(
+def _get_docker_executor(db_path: str, secrets_path: str | None):
+    """Return a DockerExecutor if Docker is available, else None with a warning."""
+    # Lazy import to avoid hard dependency on docker when running locally.
+    try:
+        from scriptbox.sandbox.docker_executor import DockerExecutor
+
+        de = DockerExecutor(db_path=db_path, secrets_path=secrets_path)
+        if de.is_available():
+            return de
+        logger.warning("Docker requested but daemon not available — falling back to local execution")
+    except Exception:
+        logger.warning("Docker SDK not available — falling back to local execution", exc_info=True)
+    return None
+
+
+async def _run_local(
     info: ScriptInfo,
     db_path: str,
     inputs: dict[str, Any],
     secrets_path: str | None,
     timeout: float,
 ) -> ExecutionResult:
+    """Execute a script in-process (no container)."""
     ctx = ScriptContext(
         script_id=info.id,
         db_path=db_path,
