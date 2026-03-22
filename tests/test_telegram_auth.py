@@ -1,12 +1,12 @@
 """Tests for scriptbox.telegram.auth — config loading and authorization."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from scriptbox.config import ConfigError
 from scriptbox.telegram.auth import (
     TelegramConfig,
     TelegramConfigError,
@@ -14,32 +14,20 @@ from scriptbox.telegram.auth import (
     require_auth,
 )
 
+# Keys that conftest.py may have loaded into os.environ from .env.
+_SCRIPTBOX_ENV_KEYS = (
+    "SCRIPTBOX_BOT_TOKEN",
+    "SCRIPTBOX_CHAT_ID",
+    "SCRIPTBOX_SCRIPTS_DIR",
+    "SCRIPTBOX_DB_PATH",
+    "SCRIPTBOX_USE_SANDBOX",
+)
 
-# ---------------------------------------------------------------------------
-# TelegramConfig.from_file
-# ---------------------------------------------------------------------------
 
-
-class TestFromFile:
-    def test_valid_json(self, tmp_path: Path):
-        p = tmp_path / "config.json"
-        p.write_text(json.dumps({"bot_token": "tok:123", "chat_ids": [111, 222]}))
-        cfg = TelegramConfig.from_file(str(p))
-        assert cfg.bot_token == "tok:123"
-        assert cfg.chat_ids == [111, 222]
-        assert cfg.parse_mode == "HTML"
-
-    def test_missing_token_raises(self, tmp_path: Path):
-        p = tmp_path / "config.json"
-        p.write_text(json.dumps({"chat_ids": [111]}))
-        with pytest.raises(TelegramConfigError, match="bot_token"):
-            TelegramConfig.from_file(str(p))
-
-    def test_empty_chat_ids_raises(self, tmp_path: Path):
-        p = tmp_path / "config.json"
-        p.write_text(json.dumps({"bot_token": "tok:123", "chat_ids": []}))
-        with pytest.raises(TelegramConfigError, match="chat_ids"):
-            TelegramConfig.from_file(str(p))
+def _clear_scriptbox_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove all SCRIPTBOX_* vars so tests hit the .env file only."""
+    for key in _SCRIPTBOX_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -48,24 +36,35 @@ class TestFromFile:
 
 
 class TestFromEnv:
-    def test_valid_env(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("SCRIPTBOX_BOT_TOKEN", "tok:abc")
-        monkeypatch.setenv("SCRIPTBOX_CHAT_IDS", "100,200,300")
-        cfg = TelegramConfig.from_env()
+    def test_valid_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        _clear_scriptbox_env(monkeypatch)
+        p = tmp_path / ".env"
+        p.write_text("SCRIPTBOX_BOT_TOKEN=tok:abc\nSCRIPTBOX_CHAT_ID=100\n")
+        cfg = TelegramConfig.from_env(str(p))
         assert cfg.bot_token == "tok:abc"
-        assert cfg.chat_ids == [100, 200, 300]
+        assert cfg.chat_ids == [100]
 
-    def test_missing_token_raises(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("SCRIPTBOX_BOT_TOKEN", raising=False)
-        monkeypatch.setenv("SCRIPTBOX_CHAT_IDS", "100")
-        with pytest.raises(TelegramConfigError, match="SCRIPTBOX_BOT_TOKEN"):
-            TelegramConfig.from_env()
+    def test_env_var_overrides_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        _clear_scriptbox_env(monkeypatch)
+        p = tmp_path / ".env"
+        p.write_text("SCRIPTBOX_BOT_TOKEN=file_tok\nSCRIPTBOX_CHAT_ID=100\n")
+        monkeypatch.setenv("SCRIPTBOX_BOT_TOKEN", "env_tok")
+        cfg = TelegramConfig.from_env(str(p))
+        assert cfg.bot_token == "env_tok"
 
-    def test_missing_chat_ids_raises(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("SCRIPTBOX_BOT_TOKEN", "tok:abc")
-        monkeypatch.delenv("SCRIPTBOX_CHAT_IDS", raising=False)
-        with pytest.raises(TelegramConfigError, match="SCRIPTBOX_CHAT_IDS"):
-            TelegramConfig.from_env()
+    def test_missing_token_raises(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        _clear_scriptbox_env(monkeypatch)
+        p = tmp_path / ".env"
+        p.write_text("SCRIPTBOX_CHAT_ID=100\n")
+        with pytest.raises(ConfigError, match="SCRIPTBOX_BOT_TOKEN"):
+            TelegramConfig.from_env(str(p))
+
+    def test_missing_chat_id_raises(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        _clear_scriptbox_env(monkeypatch)
+        p = tmp_path / ".env"
+        p.write_text("SCRIPTBOX_BOT_TOKEN=tok:abc\n")
+        with pytest.raises(ConfigError, match="SCRIPTBOX_CHAT_ID"):
+            TelegramConfig.from_env(str(p))
 
 
 # ---------------------------------------------------------------------------

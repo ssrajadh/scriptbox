@@ -1,5 +1,4 @@
-# Config with secrets
-config.json
+# Secrets
 .env
 
 # ScriptBox runtime

@@ -55,7 +55,8 @@ class ScriptContext:
     def _load_env(path: str | None) -> dict[str, str]:
         """Parse a ``.env`` file into a dict.
 
-        Skips blank lines and ``#`` comments.  Returns ``{}`` if the
+        Keys prefixed with ``SCRIPTBOX_`` are excluded — those are
+        framework config, not script secrets.  Returns ``{}`` if the
         file is missing or unreadable.
         """
         if path is None:
@@ -77,6 +78,6 @@ class ScriptContext:
             # Strip surrounding quotes if present.
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                 value = value[1:-1]
-            if key:
+            if key and not key.startswith("SCRIPTBOX_"):
                 secrets[key] = value
         return secrets

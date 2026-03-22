@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
+from scriptbox.config import ConfigError, load_config
 
-class TelegramConfigError(Exception):
+
+class TelegramConfigError(ConfigError):
     """Raised when Telegram configuration is missing or invalid."""
 
 
@@ -18,41 +18,14 @@ class TelegramConfig:
     parse_mode: str = "HTML"
 
     @classmethod
-    def from_file(cls, path: str) -> TelegramConfig:
-        """Load config from a JSON file.
+    def from_env(cls, env_path: str = ".env") -> TelegramConfig:
+        """Load config from ``.env`` file and ``os.environ``.
 
-        Expected format: ``{"bot_token": "...", "chat_ids": [123456]}``
+        Uses :func:`scriptbox.config.load_config` under the hood.
+        ``SCRIPTBOX_CHAT_ID`` may be a single ID or comma-separated.
         """
-        data = json.loads(Path(path).read_text())
-        token = data.get("bot_token")
-        if not token:
-            raise TelegramConfigError("bot_token is required")
-        chat_ids = data.get("chat_ids")
-        if not chat_ids:
-            raise TelegramConfigError("chat_ids must be a non-empty list")
-        return cls(
-            bot_token=token,
-            chat_ids=chat_ids,
-            parse_mode=data.get("parse_mode", "HTML"),
-        )
-
-    @classmethod
-    def from_env(cls) -> TelegramConfig:
-        """Load config from environment variables.
-
-        Reads ``SCRIPTBOX_BOT_TOKEN`` and ``SCRIPTBOX_CHAT_IDS``
-        (comma-separated integers).
-        """
-        token = os.environ.get("SCRIPTBOX_BOT_TOKEN")
-        if not token:
-            raise TelegramConfigError("SCRIPTBOX_BOT_TOKEN environment variable is not set")
-        raw_ids = os.environ.get("SCRIPTBOX_CHAT_IDS")
-        if not raw_ids:
-            raise TelegramConfigError("SCRIPTBOX_CHAT_IDS environment variable is not set")
-        chat_ids = [int(cid.strip()) for cid in raw_ids.split(",") if cid.strip()]
-        if not chat_ids:
-            raise TelegramConfigError("SCRIPTBOX_CHAT_IDS must contain at least one ID")
-        return cls(bot_token=token, chat_ids=chat_ids)
+        cfg = load_config(env_path)
+        return cls(bot_token=cfg.bot_token, chat_ids=[cfg.chat_id])
 
 
 def authorized(chat_id: int, config: TelegramConfig) -> bool:

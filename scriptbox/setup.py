@@ -4,14 +4,10 @@ Run via ``python -m scriptbox setup``.
 """
 from __future__ import annotations
 
-import json
-import shutil
-import sys
 from pathlib import Path
 
 import httpx
 
-_CONFIG_PATH = Path("config.json")
 _ENV_PATH = Path(".env")
 _ENV_EXAMPLE_PATH = Path(".env.example")
 _API_BASE = "https://api.telegram.org/bot{token}"
@@ -24,12 +20,19 @@ def run_setup() -> None:
     print("=" * 50)
     print()
 
-    # Check for existing config.
-    if _CONFIG_PATH.exists():
-        answer = input("config.json already exists. Overwrite? [y/N] ").strip().lower()
-        if answer != "y":
-            print("Setup cancelled.")
-            return
+    # Check for existing .env with credentials.
+    if _ENV_PATH.exists():
+        existing = _ENV_PATH.read_text()
+        has_token = any(
+            line.strip().startswith("SCRIPTBOX_BOT_TOKEN=") and
+            line.strip() != "SCRIPTBOX_BOT_TOKEN="
+            for line in existing.splitlines()
+        )
+        if has_token:
+            answer = input(".env already has a bot token. Overwrite? [y/N] ").strip().lower()
+            if answer != "y":
+                print("Setup cancelled.")
+                return
 
     # ---- Bot token ---------------------------------------------------
     print("Step 1: Telegram Bot Token")
@@ -80,31 +83,52 @@ def run_setup() -> None:
 
     print()
 
-    # ---- Write config ------------------------------------------------
-    config = {
-        "bot_token": token,
-        "chat_ids": [chat_id],
-        "scripts_dir": "./scripts",
-        "db_path": "./scriptbox.db",
-        "use_sandbox": True,
-    }
-    _CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n")
-    print(f"Wrote {_CONFIG_PATH}")
-
-    # ---- Create .env from .env.example if missing --------------------
-    if not _ENV_PATH.exists():
-        if _ENV_EXAMPLE_PATH.exists():
-            shutil.copy2(_ENV_EXAMPLE_PATH, _ENV_PATH)
-            print(f"Created {_ENV_PATH} from {_ENV_EXAMPLE_PATH}")
-        else:
-            _ENV_PATH.write_text("# Add your API keys here\n")
-            print(f"Created empty {_ENV_PATH}")
-    else:
-        print(f"{_ENV_PATH} already exists, skipping.")
+    # ---- Write .env --------------------------------------------------
+    _write_env(token, chat_id)
+    print(f"Wrote {_ENV_PATH}")
 
     print()
     print("Setup complete! You can now run scripts with:")
     print("  python -m scriptbox trigger <script_id>")
+
+
+def _write_env(token: str, chat_id: int) -> None:
+    """Write or update the ``.env`` file with Telegram credentials.
+
+    Preserves existing non-SCRIPTBOX_ keys (API keys, etc.).
+    """
+    existing: dict[str, str] = {}
+    if _ENV_PATH.exists():
+        for line in _ENV_PATH.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            existing[key.strip()] = value.strip()
+
+    # Set SCRIPTBOX_ values.
+    existing["SCRIPTBOX_BOT_TOKEN"] = token
+    existing["SCRIPTBOX_CHAT_ID"] = str(chat_id)
+    existing.setdefault("SCRIPTBOX_SCRIPTS_DIR", "./scripts")
+    existing.setdefault("SCRIPTBOX_DB_PATH", "./scriptbox.db")
+    existing.setdefault("SCRIPTBOX_USE_SANDBOX", "true")
+
+    # Ensure API key placeholders exist.
+    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"):
+        existing.setdefault(key, "")
+
+    # Write in a stable order: SCRIPTBOX_ first, then the rest.
+    lines: list[str] = []
+    sb_keys = sorted(k for k in existing if k.startswith("SCRIPTBOX_"))
+    other_keys = sorted(k for k in existing if not k.startswith("SCRIPTBOX_"))
+    for key in sb_keys:
+        lines.append(f"{key}={existing[key]}")
+    if sb_keys and other_keys:
+        lines.append("")
+    for key in other_keys:
+        lines.append(f"{key}={existing[key]}")
+
+    _ENV_PATH.write_text("\n".join(lines) + "\n")
 
 
 def _validate_token(token: str) -> str | None:

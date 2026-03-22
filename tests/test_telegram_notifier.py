@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -34,7 +36,6 @@ class TestSandboxNotifier:
 
     def test_to_json(self):
         n = SandboxNotifier()
-        # Synchronous append for setup
         n.messages.append({"text": "hi", "parse_mode": "HTML"})
         raw = n.to_json()
         assert json.loads(raw) == [{"text": "hi", "parse_mode": "HTML"}]
@@ -62,16 +63,13 @@ class TestSplitMessage:
         assert _split_message("hello") == ["hello"]
 
     def test_long_message_split(self):
-        # 5000 chars should produce 2 chunks
         msg = "a" * 5000
         chunks = _split_message(msg)
         assert len(chunks) == 2
-        # All content preserved
         assert "".join(chunks) == msg
         assert all(len(c) <= 4096 for c in chunks)
 
     def test_split_at_newline(self):
-        # Build a message where a newline sits just before the 4096 limit
         line = "x" * 100 + "\n"
         msg = line * 50  # 5050 chars
         chunks = _split_message(msg)
@@ -87,7 +85,7 @@ class TestSplitMessage:
 class TestTelegramNotifierSend:
     async def test_long_message_produces_multiple_sends(self):
         notifier = TelegramNotifier(bot_token="fake:token", chat_id=123)
-        msg = "a" * 5000  # > 4096 → 2 chunks
+        msg = "a" * 5000
 
         with patch.object(notifier, "_post_send", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = {"message_id": 1}
@@ -111,18 +109,16 @@ class TestTelegramNotifierSend:
 
 
 class TestTelegramNotifierErrorHandling:
-    async def test_invalid_token_logs_but_no_raise(self, caplog):
+    async def test_invalid_token_logs_but_no_raise(self):
         """send() must swallow errors so script execution is not interrupted."""
         notifier = TelegramNotifier(bot_token="invalid:token", chat_id=123)
 
-        # Simulate a network/API failure inside _post_send
         with patch.object(
             notifier,
             "_post_send",
             new_callable=AsyncMock,
             return_value=None,
         ):
-            # Should not raise
             await notifier.send("test message")
 
 
@@ -155,11 +151,8 @@ class TestTelegramNotifierSendResults:
 
 
 class TestHarnessNotifications:
-    async def test_notifications_written(self, tmp_path):
+    async def test_notifications_written(self, tmp_path: Path):
         """Harness should write notifications.json when the script sends messages."""
-        import json
-        from pathlib import Path
-
         from scriptbox.sandbox.harness import run_harness
 
         run_dir = tmp_path / "run"
@@ -186,11 +179,8 @@ async def run(ctx):
         assert len(messages) == 1
         assert messages[0]["text"] == "hello from sandbox"
 
-    async def test_no_notifications_no_file(self, tmp_path):
+    async def test_no_notifications_no_file(self, tmp_path: Path):
         """No notifications.json if script doesn't use telegram."""
-        import json
-        from pathlib import Path
-
         from scriptbox.sandbox.harness import run_harness
 
         run_dir = tmp_path / "run"
@@ -213,29 +203,31 @@ async def run(ctx):
 
 
 # ---------------------------------------------------------------------------
-# Live Telegram tests (require real token, skipped by default)
+# Live Telegram tests (credentials from .env via conftest.py)
 # ---------------------------------------------------------------------------
 
+_has_creds = bool(os.environ.get("SCRIPTBOX_BOT_TOKEN") and os.environ.get("SCRIPTBOX_CHAT_ID"))
+
 telegram_live = pytest.mark.skipif(
-    True,
-    reason="Set SCRIPTBOX_TEST_BOT_TOKEN and SCRIPTBOX_TEST_CHAT_ID to run live Telegram tests",
+    not _has_creds,
+    reason="SCRIPTBOX_BOT_TOKEN / SCRIPTBOX_CHAT_ID not set (check .env)",
 )
 
 
 @telegram_live
 class TestTelegramLive:
-    """Manual verification tests. To run:
+    """Live Telegram API tests.
 
-    SCRIPTBOX_TEST_BOT_TOKEN=... SCRIPTBOX_TEST_CHAT_ID=... \\
+    Credentials are loaded from ``.env`` by ``conftest.py`` at import
+    time.  Run with::
+
         pytest tests/test_telegram_notifier.py::TestTelegramLive -v -s
     """
 
     @pytest.fixture()
     def live_notifier(self):
-        import os
-
-        token = os.environ["SCRIPTBOX_TEST_BOT_TOKEN"]
-        chat_id = int(os.environ["SCRIPTBOX_TEST_CHAT_ID"])
+        token = os.environ["SCRIPTBOX_BOT_TOKEN"]
+        chat_id = int(os.environ["SCRIPTBOX_CHAT_ID"])
         return TelegramNotifier(bot_token=token, chat_id=chat_id)
 
     async def test_send_real_message(self, live_notifier):

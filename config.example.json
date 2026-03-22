@@ -1,7 +1,0 @@
-{
-  "bot_token": "YOUR_BOT_TOKEN_HERE",
-  "chat_ids": [123456789],
-  "scripts_dir": "./scripts",
-  "db_path": "./scriptbox.db",
-  "use_sandbox": true
-}

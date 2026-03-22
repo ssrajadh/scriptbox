@@ -17,7 +17,7 @@ def db_path(tmp_path: Path) -> str:
 @pytest.fixture()
 def env_file(tmp_path: Path) -> str:
     p = tmp_path / ".env"
-    p.write_text("API_KEY=test123\nOTHER=hello\n")
+    p.write_text("API_KEY=test123\nOTHER=hello\nSCRIPTBOX_BOT_TOKEN=tok\n")
     return str(p)
 
 
@@ -77,9 +77,10 @@ class TestDefaults:
 
 
 class TestSecrets:
-    def test_loads_from_env_file(self, db_path: str, env_file: str):
+    def test_loads_non_scriptbox_keys(self, db_path: str, env_file: str):
         ctx = ScriptContext("s", db_path, env_path=env_file)
         assert ctx.secrets == {"API_KEY": "test123", "OTHER": "hello"}
+        assert "SCRIPTBOX_BOT_TOKEN" not in ctx.secrets
 
     def test_bad_path_gives_empty_dict(self, db_path: str):
         ctx = ScriptContext("s", db_path, env_path="/no/such/.env")
