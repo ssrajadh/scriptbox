@@ -10,6 +10,7 @@ dependencies = [
     "httpx",
     "apscheduler",
     "aiosqlite",
+    "docker",
 ]
 
 [project.optional-dependencies]
@@ -20,3 +21,6 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "docker: tests that require a running Docker daemon",
+]

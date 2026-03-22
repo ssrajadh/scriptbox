@@ -5,7 +5,13 @@ A dynamic script loader, DAG-based executor, and scheduler. Scripts are plain Py
 ## Commands
 
 ```bash
-# Run all tests
+# Run all tests (excludes docker tests by default)
+python -m pytest tests/ -m "not docker"
+
+# Run docker tests (requires running Docker daemon)
+python -m pytest tests/ -m docker
+
+# Run all tests including docker
 python -m pytest tests/
 
 # Run a specific test module
@@ -31,6 +37,7 @@ The pipeline flows: **loader -> dag -> executor -> runner**, with **store**, **c
 - **store.py** — `ScriptStore`: per-script key-value store backed by SQLite (aiosqlite). Namespaced by script_id. JSON-serialized values. Table auto-created on first use.
 - **observability.py** — `RunLogger`: logs every execution to SQLite `runs` table. `get_runs()`, `get_stats()`, `get_all_script_stats()` for querying. `llm_calls` table exists for future LLM cost tracking.
 - **sandbox/config.py** — `SandboxConfig` dataclass parsed from `META["sandbox"]`. Validates memory format, cpu > 0, timeout > 0, network in {bridge, none, restricted}. `SandboxConfig.disabled()` for local execution.
+- **sandbox/image_builder.py** — `ImageBuilder` builds and caches a `scriptbox-runner:latest` Docker image. Assembles build context in a temp dir (Dockerfile, requirements.txt, scriptbox package, harness.py). Stores a source-file hash as an image label to skip rebuilds when nothing changed. Uses `docker` Python SDK.
 
 ### Script contract
 
@@ -57,6 +64,7 @@ async def run(ctx):
 - Tests use `tmp_path` for database files and temp script directories — no cleanup needed.
 - `test_integration.py` validates the full end-to-end pipeline.
 - pytest-asyncio is configured with `asyncio_mode = "auto"` in pyproject.toml.
+- Docker tests are marked with `@pytest.mark.docker` and auto-skip if Docker is unavailable.
 
 ### Key conventions
 
