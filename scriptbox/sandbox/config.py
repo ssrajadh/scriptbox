@@ -21,6 +21,7 @@ class SandboxConfig:
     network: str = "bridge"
     allowed_domains: list[str] = field(default_factory=list)
     read_only_root: bool = True
+    pids_limit: int = 64
     env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -46,6 +47,7 @@ class SandboxConfig:
             network=sandbox.get("network", cls.network),
             allowed_domains=sandbox.get("allowed_domains", list()),
             read_only_root=sandbox.get("read_only_root", cls.read_only_root),
+            pids_limit=sandbox.get("pids_limit", cls.pids_limit),
             env=sandbox.get("env", dict()),
         )
         cfg._validate()
@@ -73,4 +75,8 @@ class SandboxConfig:
         if self.network not in _VALID_NETWORKS:
             raise SandboxConfigError(
                 f"network must be one of {_VALID_NETWORKS}, got {self.network!r}"
+            )
+        if self.pids_limit <= 0:
+            raise SandboxConfigError(
+                f"pids_limit must be > 0, got {self.pids_limit}"
             )

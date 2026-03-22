@@ -115,6 +115,7 @@ class DockerExecutor:
             },
             "mem_limit": cfg.memory,
             "nano_cpus": int(cfg.cpu * 1e9),
+            "pids_limit": cfg.pids_limit,
             "detach": True,
             "environment": cfg.env or {},
         }
