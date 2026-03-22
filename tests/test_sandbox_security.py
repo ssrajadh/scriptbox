@@ -254,7 +254,7 @@ class TestRunDirContents:
         assert result.status == "success"
         files = set(result.outputs["files"])
         # The 4 seed files must be present.
-        required = {"config.json", "inputs.json", "script.py", "secrets.json"}
+        required = {"config.json", "inputs.json", "script.py"}
         assert required.issubset(files)
         # Only harmless Python artifacts (__pycache__) may appear alongside
         # them — no host files should leak in.

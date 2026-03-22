@@ -52,7 +52,7 @@ def _setup_run_dir(
     script_src: str,
     *,
     inputs: dict | None = None,
-    secrets: dict | None = None,
+    env_vars: dict[str, str] | None = None,
     config: dict | None = None,
 ) -> Path:
     """Populate a run directory and return its path."""
@@ -65,8 +65,9 @@ def _setup_run_dir(
     )
     if inputs is not None:
         (run_dir / "inputs.json").write_text(json.dumps(inputs))
-    if secrets is not None:
-        (run_dir / "secrets.json").write_text(json.dumps(secrets))
+    if env_vars is not None:
+        lines = [f"{k}={v}" for k, v in env_vars.items()]
+        (run_dir / ".env").write_text("\n".join(lines) + "\n")
 
     return run_dir
 
@@ -251,7 +252,7 @@ async def run(ctx):
     return {"key": ctx.secrets.get("API_KEY")}
 """
         run_dir = _setup_run_dir(
-            tmp_path, script, secrets={"API_KEY": "abc123"}
+            tmp_path, script, env_vars={"API_KEY": "abc123"}
         )
         await run_harness(run_dir)
         outputs = json.loads((run_dir / "outputs.json").read_text())

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,8 @@ import httpx
 from scriptbox.store import ScriptStore
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_ENV_PATH = ".env"
 
 
 class StubLLMClient:
@@ -38,23 +39,44 @@ class ScriptContext:
         script_id: str,
         db_path: str,
         inputs: dict[str, Any] | None = None,
-        secrets_path: str | None = None,
+        env_path: str | None = _DEFAULT_ENV_PATH,
         http_client: httpx.AsyncClient | None = None,
+        telegram: Any | None = None,
     ) -> None:
         self.script_id = script_id
         self.store = ScriptStore(db_path, namespace=script_id)
         self.inputs: dict[str, Any] = inputs if inputs is not None else {}
         self.http = http_client if http_client is not None else httpx.AsyncClient()
         self.llm = StubLLMClient()
-        self.telegram = StubTelegramClient()
-        self.secrets: dict[str, Any] = self._load_secrets(secrets_path)
+        self.telegram = telegram if telegram is not None else StubTelegramClient()
+        self.secrets: dict[str, str] = self._load_env(env_path)
 
     @staticmethod
-    def _load_secrets(path: str | None) -> dict[str, Any]:
+    def _load_env(path: str | None) -> dict[str, str]:
+        """Parse a ``.env`` file into a dict.
+
+        Skips blank lines and ``#`` comments.  Returns ``{}`` if the
+        file is missing or unreadable.
+        """
         if path is None:
             return {}
         try:
-            return json.loads(Path(path).read_text())
+            text = Path(path).read_text()
         except Exception:
-            logger.warning("Failed to load secrets from %s", path, exc_info=True)
             return {}
+        secrets: dict[str, str] = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # Strip surrounding quotes if present.
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            if key:
+                secrets[key] = value
+        return secrets

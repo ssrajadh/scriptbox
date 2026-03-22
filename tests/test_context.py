@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import httpx
@@ -16,9 +15,9 @@ def db_path(tmp_path: Path) -> str:
 
 
 @pytest.fixture()
-def secrets_file(tmp_path: Path) -> str:
-    p = tmp_path / "secrets.json"
-    p.write_text(json.dumps({"API_KEY": "test123"}))
+def env_file(tmp_path: Path) -> str:
+    p = tmp_path / ".env"
+    p.write_text("API_KEY=test123\nOTHER=hello\n")
     return str(p)
 
 
@@ -68,23 +67,35 @@ class TestDefaults:
         assert ctx.inputs == {}
 
     def test_secrets_empty_when_no_file(self, db_path: str):
-        ctx = ScriptContext("s", db_path)
+        ctx = ScriptContext("s", db_path, env_path=None)
         assert ctx.secrets == {}
 
 
 # ---------------------------------------------------------------------------
-# Secrets
+# Secrets (.env loading)
 # ---------------------------------------------------------------------------
 
 
 class TestSecrets:
-    def test_loads_from_file(self, db_path: str, secrets_file: str):
-        ctx = ScriptContext("s", db_path, secrets_path=secrets_file)
-        assert ctx.secrets == {"API_KEY": "test123"}
+    def test_loads_from_env_file(self, db_path: str, env_file: str):
+        ctx = ScriptContext("s", db_path, env_path=env_file)
+        assert ctx.secrets == {"API_KEY": "test123", "OTHER": "hello"}
 
     def test_bad_path_gives_empty_dict(self, db_path: str):
-        ctx = ScriptContext("s", db_path, secrets_path="/no/such/file.json")
+        ctx = ScriptContext("s", db_path, env_path="/no/such/.env")
         assert ctx.secrets == {}
+
+    def test_comments_and_blanks_skipped(self, db_path: str, tmp_path: Path):
+        p = tmp_path / ".env"
+        p.write_text("# comment\n\nKEY=val\n  \n# another\n")
+        ctx = ScriptContext("s", db_path, env_path=str(p))
+        assert ctx.secrets == {"KEY": "val"}
+
+    def test_quoted_values_stripped(self, db_path: str, tmp_path: Path):
+        p = tmp_path / ".env"
+        p.write_text('A="double"\nB=\'single\'\nC=plain\n')
+        ctx = ScriptContext("s", db_path, env_path=str(p))
+        assert ctx.secrets == {"A": "double", "B": "single", "C": "plain"}
 
 
 # ---------------------------------------------------------------------------

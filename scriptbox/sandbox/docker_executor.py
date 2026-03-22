@@ -25,12 +25,12 @@ class DockerExecutor:
     def __init__(
         self,
         db_path: str,
-        secrets_path: str | None = None,
         scripts_dir: str | None = None,
+        notifier: Any | None = None,
     ) -> None:
         self._db_path = db_path
-        self._secrets_path = secrets_path
         self._scripts_dir = scripts_dir
+        self._notifier = notifier
         self._image_builder = ImageBuilder()
         self._client = docker.from_env()
 
@@ -95,10 +95,11 @@ class DockerExecutor:
             json.dumps({"script_id": script_info.id})
         )
         (run_dir / "inputs.json").write_text(json.dumps(inputs))
-        if self._secrets_path and Path(self._secrets_path).exists():
-            shutil.copy2(self._secrets_path, run_dir / "secrets.json")
-        else:
-            (run_dir / "secrets.json").write_text("{}")
+        # Copy .env into the run dir so the harness can load secrets.
+        env_path = Path(".env")
+        if env_path.exists():
+            shutil.copy2(env_path, run_dir / ".env")
+
 
     def _create_container(
         self,
@@ -161,6 +162,7 @@ class DockerExecutor:
                 outputs=None,
             )
 
+        await self._dispatch_notifications(run_dir)
         return self._read_results(run_dir, script_id)
 
     def _read_results(self, run_dir: Path, script_id: str) -> ExecutionResult:
@@ -191,6 +193,25 @@ class DockerExecutor:
             error=result_data.get("error"),
             outputs=outputs,
         )
+
+    async def _dispatch_notifications(self, run_dir: Path) -> None:
+        """Read and send any notifications queued by the SandboxNotifier."""
+        if self._notifier is None:
+            return
+        notif_file = run_dir / "notifications.json"
+        if not notif_file.exists():
+            return
+        try:
+            from scriptbox.telegram.notifier import SandboxNotifier
+
+            messages = SandboxNotifier.from_json(notif_file.read_text())
+            for msg in messages:
+                await self._notifier.send(
+                    msg.get("text", ""),
+                    parse_mode=msg.get("parse_mode", "HTML"),
+                )
+        except Exception:
+            logger.error("Failed to dispatch sandbox notifications", exc_info=True)
 
     def _force_remove(self, container) -> None:
         try:

@@ -15,13 +15,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--scripts-dir", default="./scripts", help="Path to scripts directory"
     )
     common.add_argument("--db", default="./scriptbox.db", help="Path to SQLite database")
-    common.add_argument("--secrets", default=None, help="Path to secrets JSON file")
 
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("build-image", help="Build the sandbox Docker image")
     sub.add_parser("cleanup", parents=[common], help="Remove sandbox containers, image, and orphaned stores")
     sub.add_parser("check", help="Check if Docker is available and show image info")
+    sub.add_parser("setup", help="Interactive setup for Telegram bot configuration")
 
     trigger_p = sub.add_parser("trigger", parents=[common], help="Manually trigger a script by ID")
     trigger_p.add_argument("script_id", help="Script ID to trigger")
@@ -65,7 +65,6 @@ async def _cmd_cleanup(args: argparse.Namespace) -> None:
     runner = Runner(
         args.scripts_dir,
         args.db,
-        secrets_path=args.secrets,
         use_sandbox=True,
     )
     await runner.setup()
@@ -82,7 +81,6 @@ async def _cmd_trigger(args: argparse.Namespace) -> None:
     runner = Runner(
         args.scripts_dir,
         args.db,
-        secrets_path=args.secrets,
         use_sandbox=True,
     )
     await runner.setup()
@@ -108,6 +106,12 @@ async def _cmd_trigger(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _cmd_setup() -> None:
+    from scriptbox.setup import run_setup
+
+    run_setup()
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -124,6 +128,8 @@ def main() -> None:
         asyncio.run(_cmd_cleanup(args))
     elif args.command == "trigger":
         asyncio.run(_cmd_trigger(args))
+    elif args.command == "setup":
+        _cmd_setup()
 
 
 if __name__ == "__main__":

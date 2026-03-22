@@ -19,8 +19,9 @@ from types import ModuleType
 
 import httpx
 
-from scriptbox.context import ScriptContext, StubLLMClient, StubTelegramClient
+from scriptbox.context import ScriptContext, StubLLMClient
 from scriptbox.store import ScriptStore
+from scriptbox.telegram.notifier import SandboxNotifier
 
 _DEFAULT_DB_PATH = "/store/store.db"
 
@@ -50,7 +51,7 @@ async def run_harness(base_path: str | Path) -> int:
         config.json    – {"script_id": "...", "db_path": "..."}
         script.py      – the user script to execute
         inputs.json    – (optional) upstream outputs
-        secrets.json   – (optional) script secrets
+        .env           – (optional) KEY=VALUE secrets
 
     Writes back::
 
@@ -69,8 +70,8 @@ async def run_harness(base_path: str | Path) -> int:
     db_path: str = config.get("db_path", _DEFAULT_DB_PATH)
 
     inputs = _read_json(base / "inputs.json")
-    secrets_file = base / "secrets.json"
-    secrets_path_str = str(secrets_file) if secrets_file.exists() else None
+    env_file = base / ".env"
+    env_path_str = str(env_file) if env_file.exists() else None
 
     # ---- import the user script --------------------------------------------
     script_file = base / "script.py"
@@ -84,13 +85,17 @@ async def run_harness(base_path: str | Path) -> int:
 
     # ---- build context and run ---------------------------------------------
     http_client = httpx.AsyncClient()
+    notifier = SandboxNotifier()
     ctx = ScriptContext(
         script_id=script_id,
         db_path=db_path,
         inputs=inputs,
-        secrets_path=secrets_path_str,
+        env_path=env_path_str,
         http_client=http_client,
+        telegram=notifier,
     )
+
+    notifications_path = base / "notifications.json"
 
     t0 = time.monotonic()
     try:
@@ -100,6 +105,7 @@ async def run_harness(base_path: str | Path) -> int:
         tb = traceback.format_exc()
         _write_json(result_path, {"status": "failed", "duration_ms": duration_ms, "error": tb})
         _write_json(outputs_path, {})
+        _write_notifications(notifications_path, notifier)
         await http_client.aclose()
         return 1
 
@@ -117,10 +123,12 @@ async def run_harness(base_path: str | Path) -> int:
             "error": f"Output not JSON-serializable: {tb}",
         })
         _write_json(outputs_path, {})
+        _write_notifications(notifications_path, notifier)
         await http_client.aclose()
         return 1
 
     _write_json(result_path, {"status": "success", "duration_ms": duration_ms, "error": None})
+    _write_notifications(notifications_path, notifier)
     await http_client.aclose()
     return 0
 
@@ -129,6 +137,13 @@ def _write_json(path: Path, data) -> None:
     """Write *data* as JSON to *path*, creating parent dirs if needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data))
+
+
+def _write_notifications(path: Path, notifier: SandboxNotifier) -> None:
+    """Persist any queued notifications so the host can dispatch them."""
+    if notifier.messages:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(notifier.to_json())
 
 
 def main() -> None:

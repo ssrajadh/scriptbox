@@ -1,3 +1,23 @@
-/.pytest_cache
-**/__pycache__
-*.db
+# Config with secrets
+config.json
+.env
+
+# ScriptBox runtime
+scriptbox.db
+stores/
+__pycache__/
+*.pyc
+*.pyo
+
+# Python
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / cache
+.pytest_cache/

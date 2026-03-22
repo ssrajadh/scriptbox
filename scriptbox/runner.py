@@ -37,12 +37,10 @@ class Runner:
         self,
         scripts_dir: str,
         db_path: str = "./scriptbox.db",
-        secrets_path: str | None = None,
         use_sandbox: bool = True,
     ) -> None:
         self._scripts_dir = scripts_dir
         self._db_path = db_path
-        self._secrets_path = secrets_path
         self._use_sandbox = use_sandbox
         self._scripts: list[ScriptInfo] = []
         self._run_logger = RunLogger(db_path)
@@ -71,7 +69,6 @@ class Runner:
             self._scripts,
             script_id,
             self._db_path,
-            self._secrets_path,
             use_sandbox=self._use_sandbox,
         )
         for r in results:
@@ -192,7 +189,6 @@ class Runner:
             self._scripts,
             script_id,
             self._db_path,
-            self._secrets_path,
             use_sandbox=self._use_sandbox,
         )
         for r in results:
