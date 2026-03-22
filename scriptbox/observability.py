@@ -92,6 +92,18 @@ class RunLogger:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def get_runs_since(self, since: str) -> list[dict[str, Any]]:
+        """Return runs with ``started_at >= since`` (ISO date string)."""
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await self._ensure_tables(db)
+            cursor = await db.execute(
+                "SELECT * FROM runs WHERE started_at >= ? ORDER BY id DESC",
+                (since,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
     async def get_stats(self, script_id: str | None = None) -> dict[str, Any]:
         """Aggregate statistics, optionally filtered to one script."""
         async with aiosqlite.connect(self._db_path) as db:

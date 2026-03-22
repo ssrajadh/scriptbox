@@ -47,6 +47,8 @@ class ScriptBoxConfig:
     scripts_dir: str = "./scripts"
     db_path: str = "./scriptbox.db"
     use_sandbox: bool = True
+    daily_digest: bool = False
+    daily_digest_time: str = "09:00"
     # Non-SCRIPTBOX_ keys from .env (API keys, etc.)
     secrets: dict[str, str] | None = None
 
@@ -79,6 +81,10 @@ def load_config(env_path: str = ".env") -> ScriptBoxConfig:
     raw_sandbox = _get("SCRIPTBOX_USE_SANDBOX", "true")
     use_sandbox = raw_sandbox.lower() in ("true", "1", "yes")
 
+    raw_digest = _get("SCRIPTBOX_DAILY_DIGEST", "false")
+    daily_digest = raw_digest.lower() in ("true", "1", "yes")
+    daily_digest_time = _get("SCRIPTBOX_DAILY_DIGEST_TIME", "09:00")
+
     # Everything without the SCRIPTBOX_ prefix goes into secrets.
     secrets: dict[str, str] = {}
     for key, value in file_vars.items():
@@ -96,5 +102,7 @@ def load_config(env_path: str = ".env") -> ScriptBoxConfig:
         scripts_dir=scripts_dir,
         db_path=db_path,
         use_sandbox=use_sandbox,
+        daily_digest=daily_digest,
+        daily_digest_time=daily_digest_time,
         secrets=secrets,
     )

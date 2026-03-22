@@ -39,7 +39,13 @@ async def run(
     cfg = load_config(env_path)
     tg_config = TelegramConfig(bot_token=cfg.bot_token, chat_ids=[cfg.chat_id])
 
-    runner = Runner(cfg.scripts_dir, cfg.db_path, cfg.use_sandbox)
+    runner = Runner(
+        cfg.scripts_dir,
+        cfg.db_path,
+        cfg.use_sandbox,
+        daily_digest=cfg.daily_digest,
+        daily_digest_time=cfg.daily_digest_time,
+    )
     notifier = TelegramNotifier(cfg.bot_token, cfg.chat_id)
     runner.set_notifier(notifier)
 
