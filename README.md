@@ -1,4 +1,4 @@
-# ScriptBox — Your AI Agent Is Just a Scripts Folder
+# ScriptBox — Your AI Agent Is Just a Scripts Folder (In Progress)
 
 **A composable, sandboxed, observable script runner for personal automation — controlled from Telegram, authored with Claude Code.**
 
